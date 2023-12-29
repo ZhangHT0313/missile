@@ -1,0 +1,125 @@
+#include "can.h"
+#include "led.h"
+#include "delay.h"
+#include "usart.h"
+
+
+void CAN_Configuration(void)																											//CAN�ײ�����
+{
+	CAN_InitTypeDef CAN_InitStructure;																							//�ṹ�嶨��			
+	GPIO_InitTypeDef GPIO_InitStructure;
+	CAN_FilterInitTypeDef CAN_FilterStructure;
+	NVIC_InitTypeDef NVIC_InitStructure1;
+	NVIC_InitTypeDef NVIC_InitStructure2;
+	//ʱ��ʹ��
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_CAN1 | RCC_APB1Periph_CAN2,ENABLE);			//ʹ��CANʱ�ӣ�CAN2�Ǵ�CAN��ʹ��ǰ����ʹ��CAN1��ʼʱ�ӣ�
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOB ,ENABLE);		//ʹ��GPIOʱ��
+	//���ų�ʼ��
+	GPIO_InitStructure.GPIO_Mode=GPIO_Mode_AF;																		//GPIO��ʼ��
+	GPIO_InitStructure.GPIO_OType=GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_Pin=GPIO_Pin_5 | GPIO_Pin_6 | GPIO_Pin_8 | GPIO_Pin_9;                       //��ʼ��5 ,6 ,8��9����
+	GPIO_InitStructure.GPIO_PuPd=GPIO_PuPd_UP;
+	GPIO_InitStructure.GPIO_Speed=GPIO_Speed_50MHz;
+	GPIO_Init(GPIOB,&GPIO_InitStructure);
+	
+//	GPIO_InitStructure.GPIO_Pin=GPIO_Pin_5 | GPIO_Pin_6;                       //��ʼ��5��6����
+//	GPIO_Init(GPIOB,&GPIO_InitStructure);	
+	//���Ÿ���
+	GPIO_PinAFConfig(GPIOB,GPIO_PinSource8,GPIO_AF_CAN1);												//���ø���
+	GPIO_PinAFConfig(GPIOB,GPIO_PinSource9,GPIO_AF_CAN1);
+	GPIO_PinAFConfig(GPIOB,GPIO_PinSource5,GPIO_AF_CAN2);
+	GPIO_PinAFConfig(GPIOB,GPIO_PinSource6,GPIO_AF_CAN2);
+	//CAN��ʼ��
+	CAN_InitStructure.CAN_TTCM=DISABLE;	                                       //�¼�����	
+	CAN_InitStructure.CAN_ABOM=ENABLE;				                           //�Զ����߹���																		
+	CAN_InitStructure.CAN_AWUM=ENABLE;                                         //�Զ�����
+	CAN_InitStructure.CAN_NART=DISABLE;	                                       //�����ش�
+	CAN_InitStructure.CAN_RFLM=DISABLE;
+	CAN_InitStructure.CAN_TXFP=ENABLE;                                                             //CAN��ʼ��
+	
+	CAN_InitStructure.CAN_Mode=CAN_Mode_Normal;
+	CAN_InitStructure.CAN_SJW=CAN_SJW_1tq;
+	CAN_InitStructure.CAN_BS1=CAN_BS1_9tq;
+	CAN_InitStructure.CAN_BS2=CAN_BS2_4tq;	
+	CAN_InitStructure.CAN_Prescaler=3;                             //�������ã�42MHz/3/(1+9+4)=1MHz
+	CAN_Init(CAN1,&CAN_InitStructure);
+	CAN_Init(CAN2,&CAN_InitStructure);
+	//ɸѡ����ʼ��
+	CAN_FilterStructure.CAN_FilterNumber=0;
+	CAN_FilterStructure.CAN_FilterMode=CAN_FilterMode_IdMask;
+	CAN_FilterStructure.CAN_FilterScale=CAN_FilterScale_32bit;
+	CAN_FilterStructure.CAN_FilterIdHigh=0x0000;
+	CAN_FilterStructure.CAN_FilterIdLow=0x0000;
+	CAN_FilterStructure.CAN_FilterMaskIdHigh=0x0000;                  //������0��ɸѡ
+	CAN_FilterStructure.CAN_FilterMaskIdLow=0x0000;	
+	CAN_FilterStructure.CAN_FilterFIFOAssignment=CAN_Filter_FIFO0;
+	CAN_FilterStructure.CAN_FilterActivation=ENABLE;
+	CAN_FilterInit(&CAN_FilterStructure);
+	CAN_FilterStructure.CAN_FilterNumber=14;
+	CAN_FilterInit(&CAN_FilterStructure);	
+	//�жϳ�ʼ��+ʹ��
+	CAN_ITConfig(CAN1,CAN_IT_FMP0,ENABLE);                                        //ʹ��CAN_IT�ж�
+	CAN_ITConfig(CAN2,CAN_IT_FMP0,ENABLE);
+	
+	NVIC_InitStructure1.NVIC_IRQChannel=CAN1_RX0_IRQn;
+	NVIC_InitStructure1.NVIC_IRQChannelPreemptionPriority=0;
+	NVIC_InitStructure1.NVIC_IRQChannelSubPriority=1;
+	NVIC_InitStructure1.NVIC_IRQChannelCmd=ENABLE;
+	NVIC_Init(&NVIC_InitStructure1);
+	
+	NVIC_InitStructure2.NVIC_IRQChannel=CAN2_RX0_IRQn;
+	NVIC_InitStructure2.NVIC_IRQChannelPreemptionPriority=1;
+	NVIC_InitStructure2.NVIC_IRQChannelSubPriority=1;
+	NVIC_InitStructure2.NVIC_IRQChannelCmd=ENABLE;
+	NVIC_Init(&NVIC_InitStructure2);
+	
+}
+
+/*
+ *�������ܣ�canͨ�ŷ�������
+ *��ڲ�����msg��Ҫ���͵�����      len���������ݵĳ���
+ *���ڲ�����1 -> �ɹ�����      0 -> δ�ɹ�����
+*/
+u8 CAN1_Send_Msg(u8* msg,u8 len)
+{
+	u8 mbox;
+	u16 i=0;
+	CanTxMsg TxMessage;
+	TxMessage.StdId = 0x12;
+	TxMessage.ExtId = 0x12;
+	TxMessage.IDE = 0;
+	TxMessage.RTR = 0;
+	TxMessage.DLC = len;
+	for(i=0 ; i<len ;i++)
+	TxMessage.Data[i] = msg[i];                 
+	mbox = CAN_Transmit(CAN1, &TxMessage);
+	i=0;
+	while((CAN_TransmitStatus(CAN1 , mbox)==CAN_TxStatus_Failed)&&(i<0xFFF))i++;                        //�ȴ����ͽ���
+	if(i>=0xFFF)return 1 ;
+	return 0;
+	
+}
+
+/*
+ *�������ܣ�canͨ�Ž�������
+ *��ڲ�����buf���������ݴ洢������
+ *���ڲ�����RxMessage.DLC
+*/
+u8 CAN1_Receive_Msg(u8 *buf)
+{
+	u32 i;
+	CanRxMsg RxMessage;
+	if( CAN_MessagePending(CAN1,CAN_FIFO0)==0) return 0;      //û�յ����ݣ�ֱ���˳�
+	CAN_Receive(CAN1, CAN_FIFO0, &RxMessage);        //��ȡ����
+	for(i=0; i<RxMessage.DLC; i++)
+	buf[i]=RxMessage.Data[i];
+	return RxMessage.DLC;
+	
+}
+
+
+
+
+
+
+
